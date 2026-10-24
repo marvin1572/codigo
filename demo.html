@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Demo: Expresiones Regulares en formularios</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --tx:#293347; --mut:#5d6677; --bd:#d9dde5; --ok:#1a7f4b; --err:#b42318; --ac:#1f5fbf; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#14171d; --card:#1c2029; --tx:#e8ebf1; --mut:#9aa3b2; --bd:#323846; --ok:#4cc38a; --err:#ff8a80; --ac:#6ea8ff; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--tx); font:16px/1.5 system-ui, sans-serif; }
+  main { max-width:900px; margin:0 auto; padding:24px 16px 48px; }
+  h1 { font-size:1.6rem; margin:0 0 4px; }
+  h2 { font-size:1.15rem; margin:0 0 12px; }
+  p.sub { color:var(--mut); margin:0 0 24px; }
+  .card { background:var(--card); border:1px solid var(--bd); border-radius:10px; padding:20px; margin-bottom:20px; }
+  label { display:block; font-weight:600; margin-top:14px; }
+  input, textarea { width:100%; padding:9px 11px; font:inherit; color:var(--tx); background:var(--bg); border:1px solid var(--bd); border-radius:6px; }
+  input:focus, textarea:focus, button:focus-visible { outline:2px solid var(--ac); outline-offset:1px; }
+  input.ok, textarea.ok { border-color:var(--ok); }
+  input.bad, textarea.bad { border-color:var(--err); }
+  .msg { min-height:1.3em; font-size:.88rem; margin:4px 0 0; }
+  .msg.ok { color:var(--ok); } .msg.bad { color:var(--err); }
+  .hint { color:var(--mut); font-size:.85rem; }
+  button { margin-top:18px; padding:10px 18px; font:inherit; font-weight:600; color:#fff; background:var(--ac); border:0; border-radius:6px; cursor:pointer; }
+  #resumen { margin-top:14px; font-weight:600; }
+  table { width:100%; border-collapse:collapse; font-size:.9rem; }
+  th, td { text-align:left; padding:7px 8px; border-bottom:1px solid var(--bd); }
+  .wrap { overflow-x:auto; }
+  code { font-family:ui-monospace, Consolas, monospace; font-size:.85em; }
+  .pass { color:var(--ok); font-weight:600; } .fail { color:var(--err); font-weight:600; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Control de entrada con expresiones regulares</h1>
+  <p class="sub">Demostración del informe: validación de formato y filtro de malas palabras en nombre, correo y comentario.</p>
+
+  <section class="card">
+    <h2>Formulario de prueba</h2>
+    <form id="registro" novalidate>
+      <label for="nombre">Nombre</label>
+      <input id="nombre" autocomplete="off" placeholder="María José Peña (prueba: Juan Idiota)">
+      <p class="msg" id="m-nombre"></p>
+
+      <label for="correo">Correo electrónico</label>
+      <input id="correo" autocomplete="off" placeholder="usuario@correo.com (prueba: idiota@gmail.com)">
+      <p class="msg" id="m-correo"></p>
+
+      <label for="telefono">Teléfono (Honduras)</label>
+      <input id="telefono" autocomplete="off" placeholder="+504 9876-5432">
+      <p class="msg" id="m-telefono"></p>
+
+      <label for="clave">Contraseña</label>
+      <input id="clave" type="password" placeholder="Mínimo 8, con mayúscula, número y símbolo">
+      <p class="msg" id="m-clave"></p>
+
+      <label for="comentario">Comentario</label>
+      <textarea id="comentario" rows="3" maxlength="500" placeholder="Prueba: idiota, 1d10ta, IDIOTAAA, i.d.i.o.t.a"></textarea>
+      <p class="msg" id="m-comentario"></p>
+      <p class="hint">Lista de ejemplo: idiota, estúpido, imbécil, tonto. Se valida mientras escribes.</p>
+
+      <button type="submit">Enviar formulario</button>
+      <p id="resumen" role="status"></p>
+    </form>
+  </section>
+
+  <section class="card">
+    <h2>Casos de prueba para el informe</h2>
+    <p class="hint">Pulsa el botón y copia la columna "Obtenido" a la tabla de resultados del informe.</p>
+    <button type="button" id="btn-tests" style="margin-top:6px">Ejecutar casos de prueba</button>
+    <div class="wrap" style="margin-top:14px">
+      <table>
+        <thead><tr><th>Campo</th><th>Entrada</th><th>Esperado</th><th>Obtenido</th><th>Estado</th></tr></thead>
+        <tbody id="tests"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Patrones utilizados</h2>
+    <p><code>Nombre:</code> <code>/^\p{L}+(?:[ '\-]\p{L}+)*$/u</code> + filtro de malas palabras (modo "contiene")</p>
+    <p><code>Correo:</code> <code>/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/</code> + filtro de malas palabras (modo "contiene")</p>
+    <p><code>Teléfono:</code> <code>/^(?:\+504[ -]?)?[2389]\d{3}[ -]?\d{4}$/</code></p>
+    <p><code>Contraseña:</code> <code>/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^\w\s]).{8,}$/</code></p>
+    <p><code>Comentario:</code> filtro por palabra completa con <code>(?&lt;![\p{L}\d])(?:...)(?![\p{L}\d])</code></p>
+  </section>
+</main>
+
+<script>
+// ---------- Patrones de formato ----------
+const RE_NOMBRE   = /^\p{L}+(?:[ '\-]\p{L}+)*$/u;
+const RE_CORREO   = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+const RE_TELEFONO = /^(?:\+504[ -]?)?[2389]\d{3}[ -]?\d{4}$/;
+const RE_CLAVE    = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^\w\s]).{8,}$/;
+
+// ---------- Filtro de malas palabras ----------
+const LEET = { '0': 'o', '1': 'i', '3': 'e', '4': 'a', '5': 's', '$': 's' };
+
+// convertirArroba = false en el correo, para no romper "idiota@gmail.com"
+function normalizar(texto, convertirArroba = true) {
+  let t = texto
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')        // quita tildes
+    .replace(/[01345$]/g, c => LEET[c]);    // desactiva sustituciones
+  if (convertirArroba) t = t.replace(/@/g, 'a');
+  return t.replace(/(.)\1{2,}/g, '$1');     // idiotaaaa -> idiota
+}
+
+const PALABRAS = ['idiota', 'estupido', 'imbecil', 'tonto', 'pendejo', 'tarado', 'motherfucker', 'shit', ];
+const sep = p => p.split('').join(String.raw`[^\p{L}\d]{0,2}`); // permite i.d.i.o.t.a
+const LISTA = PALABRAS.map(sep).join('|');
+
+// Modo "palabra": solo palabras completas (comentarios)
+const PATRON_PALABRA  = new RegExp(String.raw`(?<![\p{L}\d])(?:${LISTA})(?![\p{L}\d])`, 'u');
+// Modo "contiene": aunque esté pegada a otras letras o números (nombres y correos)
+const PATRON_CONTIENE = new RegExp(`(?:${LISTA})`, 'u');
+
+function buscarMalaPalabra(texto, modo = 'palabra', convertirArroba = true) {
+  const patron = modo === 'contiene' ? PATRON_CONTIENE : PATRON_PALABRA;
+  const m = patron.exec(normalizar(texto, convertirArroba));
+  return m ? m[0] : null;
+}
+
+// ---------- Reglas por campo (devuelven null si es válido, o el mensaje de error) ----------
+const reglas = {
+  nombre: {
+    ok: 'Nombre válido.',
+    validar: v => {
+      if (buscarMalaPalabra(v, 'contiene', true)) return 'El nombre contiene lenguaje inapropiado.';
+      if (!RE_NOMBRE.test(v.trim())) return 'Usa solo letras, espacios, guion o apóstrofo.';
+      return null;
+    }
+  },
+  correo: {
+    ok: 'Correo válido.',
+    validar: v => {
+      if (buscarMalaPalabra(v, 'contiene', false)) return 'El correo contiene lenguaje inapropiado.';
+      if (!RE_CORREO.test(v.trim())) return 'Formato esperado: usuario@dominio.com';
+      return null;
+    }
+  },
+  telefono: {
+    ok: 'Teléfono válido.',
+    validar: v => RE_TELEFONO.test(v.trim()) ? null : 'Formato esperado: +504 9876-5432 o 9876-5432'
+  },
+  clave: {
+    ok: 'Contraseña segura.',
+    validar: v => RE_CLAVE.test(v) ? null : 'Mínimo 8 caracteres con mayúscula, minúscula, número y símbolo.'
+  },
+  comentario: {
+    ok: 'Comentario permitido.',
+    validar: v => buscarMalaPalabra(v, 'palabra', true) ? 'Se detectó lenguaje inapropiado. Reescribe el comentario.' : null
+  }
+};
+
+function validarCampo(id) {
+  const el = document.getElementById(id);
+  const msg = document.getElementById('m-' + id);
+  if (el.value.trim() === '') {
+    el.className = ''; msg.className = 'msg'; msg.textContent = '';
+    return id === 'comentario';             // el comentario es opcional
+  }
+  const error = reglas[id].validar(el.value);
+  const valido = error === null;
+  el.className = valido ? 'ok' : 'bad';
+  msg.className = 'msg ' + (valido ? 'ok' : 'bad');
+  msg.textContent = valido ? reglas[id].ok : error;
+  return valido;
+}
+
+Object.keys(reglas).forEach(id =>
+  document.getElementById(id).addEventListener('input', () => validarCampo(id)));
+
+document.getElementById('registro').addEventListener('submit', e => {
+  e.preventDefault();
+  const obligatorios = ['nombre', 'correo', 'telefono', 'clave'];
+  const vacios = obligatorios.filter(id => !document.getElementById(id).value.trim());
+  const resultados = Object.keys(reglas).map(id => validarCampo(id));
+  const resumen = document.getElementById('resumen');
+  if (vacios.length) {
+    resumen.style.color = 'var(--err)';
+    resumen.textContent = 'Completa los campos obligatorios: ' + vacios.join(', ') + '.';
+  } else if (resultados.every(Boolean)) {
+    resumen.style.color = 'var(--ok)';
+    resumen.textContent = 'Formulario válido. Listo para enviar.';
+  } else {
+    resumen.style.color = 'var(--err)';
+    resumen.textContent = 'Corrige los campos marcados en rojo.';
+  }
+});
+
+// ---------- Casos de prueba: [campo, entrada, ¿debe ser válido?] ----------
+const casos = [
+  ['nombre', 'María José Peña', true],
+  ['nombre', 'Antonio Pérez', true],
+  ['nombre', 'Juan123', false],
+  ['nombre', 'Juan Idiota', false],
+  ['nombre', 'Tontoooo López', false],
+  ['correo', 'usuario@correo.com', true],
+  ['correo', 'antonio@gmail.com', true],
+  ['correo', 'usuario@correo', false],
+  ['correo', 'idiota@gmail.com', false],
+  ['correo', 'idiota123@gmail.com', false],
+  ['correo', '1d10ta@gmail.com', false],
+  ['correo', 'tonto_perez@gmail.com', false],
+  ['correo', 'i.d.i.o.t.a@gmail.com', false],
+  ['telefono', '+504 9876-5432', true],
+  ['telefono', '12345678', false],
+  ['clave', 'Segura#2026', true],
+  ['clave', 'abc123', false],
+  ['comentario', 'Excelente servicio', true],
+  ['comentario', 'Eres un idiota', false],
+  ['comentario', 'Eres un 1d10ta', false],
+  ['comentario', 'Eres un IDIOTAAAA', false],
+  ['comentario', 'Eres un estúpido', false],
+  ['comentario', 'Eres un i.d.i.o.t.a', false],
+  ['comentario', 'Una decisión idiotizante', true]
+];
+
+document.getElementById('btn-tests').addEventListener('click', () => {
+  const tbody = document.getElementById('tests');
+  tbody.innerHTML = '';
+  casos.forEach(([campo, entrada, esperado]) => {
+    const resultado = reglas[campo].validar(entrada) === null;
+    const tr = document.createElement('tr');
+    [campo, entrada,
+     esperado ? 'Válido / permitido' : 'Inválido / bloqueado',
+     resultado ? 'Válido / permitido' : 'Inválido / bloqueado'
+    ].forEach(t => { const td = document.createElement('td'); td.textContent = t; tr.appendChild(td); });
+    const est = document.createElement('td');
+    est.className = resultado === esperado ? 'pass' : 'fail';
+    est.textContent = resultado === esperado ? 'Correcto' : 'Revisar';
+    tr.appendChild(est);
+    tbody.appendChild(tr);
+  });
+});
+</script>
+</body>
+</html>
